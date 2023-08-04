@@ -116,10 +116,8 @@ g_uop_ioregs = {}
 
 def load_id_names_str_data(file_name):
     id_names = {}
-    fi = open(file_name, "r")
-    str_id_names = fi.read()
-    fi.close()
-    
+    with open(file_name, "r") as fi:
+        str_id_names = fi.read()
     str_id_name_lines = str_id_names.split("\n")
     for id_name in str_id_name_lines:
         id_name_seq = id_name.split(":")
@@ -136,9 +134,8 @@ def load_id_names_str_data(file_name):
 def glm_ucode_disasm_init(init_udata):
     global g_opcodes
     g_opcodes = {}
-    fi = open("opcodes.txt", "r")
-    str_opcodes = fi.read()
-    fi.close()
+    with open("opcodes.txt", "r") as fi:
+        str_opcodes = fi.read()
     for str_opcode in str_opcodes.split("\n"):
         opcode_mnem = str_opcode.split(":")
         if opcode_mnem[0] == "":
@@ -146,17 +143,16 @@ def glm_ucode_disasm_init(init_udata):
             continue
         assert(len(opcode_mnem) == 2)
         g_opcodes[int(opcode_mnem[0], 16)] = opcode_mnem[1].strip()
-    
+
     global g_hard_imms
     g_hard_imms = []
-    fi = open("hard_imm.txt", "r")
-    str_hard_imms = fi.read()
-    fi.close()
+    with open("hard_imm.txt", "r") as fi:
+        str_hard_imms = fi.read()
     for str_hard_imm in str_hard_imms.split("\n"):
         str_hard_imm = str_hard_imm.strip()
         if len(str_hard_imm):
             g_hard_imms.append(int(str_hard_imm, 16))
-    
+
     if init_udata:
         global g_uop_cregs
         global g_uop_lables
@@ -188,8 +184,7 @@ def get_uop_imm_sel(uop):
     src0_sel = get_src0_sel(uop)
     src1_sel = get_src1_sel(uop)
     assert(is_src_imm_sel(src0_sel) or is_src_imm_sel(src1_sel))
-    imm_sel = src1_sel if is_src_imm_sel(src1_sel) else src0_sel
-    return imm_sel
+    return src1_sel if is_src_imm_sel(src1_sel) else src0_sel
 
 def is_uop_macro_imm(uop, is_special_imm = False):
     assert(is_special_imm or is_src_imm_sel(get_uop_imm_sel(uop)))
@@ -233,13 +228,15 @@ def is_uop_staging_buffer_ldstad(uop):
     return opcode in staging_buffer_ldstad_opcodes
 
 def is_uop_phys_stg_buf_ldstad(uop):
-    is_phys_ldstad = is_uop_phys_ldstad(uop) or is_uop_staging_buffer_ldstad(uop)
-    return is_phys_ldstad
+    return is_uop_phys_ldstad(uop) or is_uop_staging_buffer_ldstad(uop)
 
 def is_uop_ldstad(uop):
-    is_ldstad = is_uop_lin_ldstad(uop) or is_uop_log_simd_ldstad(uop) or \
-                is_uop_log_ldstad(uop) or is_uop_phys_stg_buf_ldstad(uop)
-    return is_ldstad
+    return (
+        is_uop_lin_ldstad(uop)
+        or is_uop_log_simd_ldstad(uop)
+        or is_uop_log_ldstad(uop)
+        or is_uop_phys_stg_buf_ldstad(uop)
+    )
 
 def is_uop_stad(uop):
     sta_opcode_bits = [0x08, 0x0d, 0x28, 0x2d, 0x2e, 0x18]
@@ -257,10 +254,7 @@ def is_uop_staging_buffer_stad(uop):
 
 def is_uop_dst_src2(uop):
     uop_dst_src2_test_funcs = [is_uop_stad, is_uop_port_out, is_uop_staging_buffer_stad]
-    for test_func in uop_dst_src2_test_funcs:
-        if test_func(uop):
-            return True
-    return False
+    return any(test_func(uop) for test_func in uop_dst_src2_test_funcs)
 
 def is_uop_common_special_imm(uop):
     common_special_imm_opcodes = [0x0fef]
@@ -369,8 +363,7 @@ def get_str_uop_phys_stg_buf_ldstad_special_imms(uop, uaddr):
     return str_special_imms
 
 def get_str_uop_lin_ldstad_special_imms(uop, uop_addr):
-    str_special_imms = get_str_uop_phys_stg_buf_ldstad_special_imms(uop, uop_addr)
-    return str_special_imms
+    return get_str_uop_phys_stg_buf_ldstad_special_imms(uop, uop_addr)
 
 def get_str_uop_log_ldstad_special_imms(uop, uop_addr):
     str_special_imms = ()
@@ -414,7 +407,7 @@ def get_str_uop_creg_move_fromto_special_imms(uop, uaddr):
     is_src1_imm = is_src_imm_sel(src1_sel)
     imm_sel = src1_sel if is_src1_imm else \
               src0_sel if is_src0_imm else 0
-    
+
     str_macro_imm = ""
     is_macro_imm = False
     special_imm = 0
@@ -428,9 +421,9 @@ def get_str_uop_creg_move_fromto_special_imms(uop, uaddr):
             special_imm = g_hard_imms[hard_imm_idx] & 0x7ff
         else:
             special_imm |= ((imm_sel & 0x07) << 13) | ((uop & 0x7c0000) >> 10) | ((uop & 0xff000000) >> 24)
-    
+
     str_special_imms = ()
-    
+
     opcode = get_uop_opcode(uop)
     if opcode == 0x042 and (src0_sel == 0 or is_src0_imm):
         if is_src0_imm and is_macro_imm:
@@ -438,18 +431,23 @@ def get_str_uop_creg_move_fromto_special_imms(uop, uaddr):
         else:
             data_imm = special_imm if src0_sel else 0
             str_special_imms += "0x%08x" % data_imm,
-    
-    if is_src1_imm or src1_sel == 0:
-        if is_macro_imm:
-            str_special_imms += str_macro_imm,
-        else:
-            creg_imm = special_imm if is_src1_imm else 0
-            str_special_imms += get_str_creg(creg_imm & 0x7ff),
-            mode_imm = (creg_imm >> 11) & 0xf
-            assert(mode_imm == 0 or mode_imm == 0x04)
-            if mode_imm == 0x04:
-                str_special_imms += "32",
-    
+
+    if (
+        is_src1_imm
+        and is_macro_imm
+        or not is_src1_imm
+        and src1_sel == 0
+        and is_macro_imm
+    ):
+        str_special_imms += str_macro_imm,
+    elif is_src1_imm or src1_sel == 0:
+        creg_imm = special_imm if is_src1_imm else 0
+        str_special_imms += get_str_creg(creg_imm & 0x7ff),
+        mode_imm = (creg_imm >> 11) & 0xf
+        assert mode_imm in [0, 0x04]
+        if mode_imm == 0x04:
+            str_special_imms += "32",
+
     return str_special_imms
 
 def get_str_uop_creg_uram_xxx_special_imms(uop, uaddr):
@@ -570,19 +568,19 @@ def get_str_uop_xxx_ustate_special_imms(uop, uaddr):
     is_src1_imm = is_src_imm_sel(src1_sel)
     assert((not is_src0_imm or src0_sel == src1_sel) and \
             is_src1_imm and src1_sel != 0x10)
-    
+
     opcode = get_uop_opcode(uop)
-    
+
     special_imm = ((src1_sel & 0x07) << 13) | ((uop & 0x7c0000) >> 10) | ((uop & 0xff000000) >> 24)
     mode_not = (uop & 0x800000) >> 23
-    
+
     str_special_imms = ()
     if is_src0_imm:
         str_special_imms += "0x%08x" % special_imm,
-    
+
     str_special_imms = ()
-    is_test_ustate = opcode == 0x00a or opcode == 0x04a
-    
+    is_test_ustate = opcode in [0x00a, 0x04a]
+
     if is_test_ustate:
         ustate_idx = (uop & 0x300000000000) >> 44
         str_state_bits = ""
@@ -591,14 +589,14 @@ def get_str_uop_xxx_ustate_special_imms(uop, uaddr):
             if special_imm & bit_val:
                 assert(ustate_idx < len(g_str_ustate_bits))
                 if bit_val in g_str_ustate_bits[ustate_idx]:
-                    str_state_bits +=  g_str_ustate_bits[ustate_idx][bit_val] + " | "
+                    str_state_bits += f"{g_str_ustate_bits[ustate_idx][bit_val]} | "
                     special_imm &= ~bit_val
         str_state_bits = str_state_bits.rstrip(" |")
         if special_imm != 0:
             if str_state_bits != "":
                 str_state_bits += " | "
             str_state_bits += "0x%04x" % special_imm
-        
+
         assert(ustate_idx < len(g_str_ustates))
         str_special_imms += g_str_ustates[ustate_idx],
         not_prefix = "!" if mode_not else ""
@@ -608,7 +606,7 @@ def get_str_uop_xxx_ustate_special_imms(uop, uaddr):
         special_imm = (special_imm & 0x3f) << 2
         not_prefix = "!" if mode_not else ""
         str_special_imms += not_prefix + "0x%02x" % special_imm,
-    
+
     return str_special_imms
 
 g_str_uflow_ctrl_tgt = { \
@@ -737,8 +735,7 @@ def get_str_uop_rw_ioport_special_imms(uop, uaddr):
 
 def get_str_uop_common_special_imms(uop, uaddr):
     special_imm = (uop & 0xff000000) >> 24
-    str_special_imms = "0x%08x" % special_imm,
-    return str_special_imms
+    return "0x%08x" % special_imm,
 
 g_uop_special_imms_process_funcs = ( \
     (is_uop_phys_stg_buf_ldstad, get_str_uop_phys_stg_buf_ldstad_special_imms), \
@@ -758,10 +755,9 @@ g_uop_special_imms_process_funcs = ( \
     (is_uop_common_special_imm, get_str_uop_common_special_imms))
 
 def is_uop_special_imms(uop):
-    for proc_funcs in g_uop_special_imms_process_funcs:
-        if proc_funcs[0](uop):
-            return True
-    return False
+    return any(
+        proc_funcs[0](uop) for proc_funcs in g_uop_special_imms_process_funcs
+    )
 
 def get_str_uop_special_imms(uop, uaddr):
     for proc_funcs in g_uop_special_imms_process_funcs:
@@ -799,13 +795,12 @@ def get_str_uop_common_imm(uop, imm_sel):
     else: # word imm
         imm = 0xffffffffffff0000 if imm_sel & 0x10 else 0
         imm |= ((imm_sel & 0x07) << 13) | ((uop & 0x7c0000) >> 10) | ((uop & 0xff000000) >> 24)
-    
+
     if is_uop_uaddr_imm(uop):
         assert(imm_sel in range(0x08, 0x10))
-        str_imm = get_str_uaddr(imm)
+        return get_str_uaddr(imm)
     else:
-        str_imm = ("0x%016x" if imm >= 0x100000000 else "0x%08x") % imm 
-    return str_imm
+        return ("0x%016x" if imm >= 0x100000000 else "0x%08x") % imm
 
 def get_str_uop_imm(uop):
     if is_uop_macro_imm(uop):
@@ -838,12 +833,10 @@ def is_uop_mmxmm(uop):
     opcode = get_uop_opcode(uop)
     non_mmxmm_opcodes = [0x608, 0x646, 0x685, 0x68a, 0x6a0, 0x6ed,
                          0x720, 0x722, 0x723, 0x7b8, 0x7ed]
-    mmxmm_opcodes = [0xcfe, 0xeae, 0xeee]
     if opcode in non_mmxmm_opcodes:
         return False
-    if opcode >= 0x400 and opcode < 0x800:
-        return True
-    return opcode in mmxmm_opcodes
+    mmxmm_opcodes = [0xcfe, 0xeae, 0xeee]
+    return True if opcode >= 0x400 and opcode < 0x800 else opcode in mmxmm_opcodes
 
 def is_mmxmm_uop_src_mmxmm(uop):
     assert(is_uop_mmxmm(uop))
@@ -879,14 +872,10 @@ def is_uop_testustate(uop):
     return (opcode & 0xf3f) == 0x00a
 
 def get_str_uaddr(uaddr):
-    if uaddr in g_uop_lables:
-        return g_uop_lables[uaddr]
-    return "U%04x" % uaddr
+    return g_uop_lables[uaddr] if uaddr in g_uop_lables else "U%04x" % uaddr
 
 def get_str_creg(creg):
-    if creg in g_uop_cregs:
-        return g_uop_cregs[creg]
-    return "0x%03x" % creg
+    return g_uop_cregs[creg] if creg in g_uop_cregs else "0x%03x" % creg
 
 def get_str_uram_addr(uram_addr):
     if uram_addr in g_uop_fscp_regs:
@@ -894,29 +883,27 @@ def get_str_uram_addr(uram_addr):
     return "0x%04x" % uram_addr
 
 def get_str_ioreg(ioreg):
-    if ioreg in g_uop_ioregs:
-        return g_uop_ioregs[ioreg]
-    return "0x%04x" % ioreg
+    return g_uop_ioregs[ioreg] if ioreg in g_uop_ioregs else "0x%04x" % ioreg
 
 def uop_disassemble(uop, uaddr):
     src0_sel = get_src0_sel(uop)
     src1_sel = get_src1_sel(uop)
     dst_sel = get_dst_sel(uop)
-    
+
     is_src0 = src0_sel != 0x00
     is_src1 = src1_sel != 0x00
     is_src2 = is_uop_dst_src2(uop)
     is_dst = not is_src2 and dst_sel != 0x00 and dst_sel != 0x10
-    
+
     is_src0_imm = is_src_imm_sel(src0_sel)
     is_src1_imm = is_src_imm_sel(src1_sel)
     assert(is_src0 or not is_src0_imm and is_src1 or not is_src1_imm)
     is_special_imms = is_uop_special_imms(uop)
-    
+
     opcode = get_uop_opcode(uop)
     is_src_xmm = not is_uop_ldstad(uop) and is_uop_mmxmm(uop) and is_mmxmm_uop_src_mmxmm(uop)
     is_dst_xmm = is_uop_mmxmm(uop) and is_mmxmm_uop_dst_mmxmm(uop)
-    
+
     str_src0 = ""
     str_src1 = ""
     str_src2 = ""
@@ -929,7 +916,7 @@ def uop_disassemble(uop, uaddr):
         str_src2 = get_dst_mnem(dst_sel, is_dst_xmm) if dst_sel else "0x%08x" % 0
     elif is_dst:
         str_dst = get_dst_mnem(dst_sel, is_dst_xmm)
-    
+
     str_imms = ""
     zero_imm = "0x%08x" % 0
     if is_special_imms:
@@ -940,11 +927,11 @@ def uop_disassemble(uop, uaddr):
         str_src0 = get_str_uop_imm(uop)
     elif not is_src0 and not is_src1:
         str_imms = zero_imm
-    
+
     if not is_src0 and is_src1 and is_uop_two_src(uop):
         assert(not is_special_imms)
         str_src0 = zero_imm
-    
+
     str_imms = re.split("\$\, |\, \$\, |\, \$", str_imms)
     str_imms_first = str_imms[0] if len(str_imms) > 1 else ""
     str_imms_second = str_imms[1] if len(str_imms) > 2 else ""
@@ -952,24 +939,24 @@ def uop_disassemble(uop, uaddr):
     str_srcs_list = [str_imms_first, str_src0, str_imms_second, str_src1, str_imms_last, str_src2]
     str_non_empty_srcs_list = [str_src for str_src in str_srcs_list if str_src != ""]
     str_srcs = ", ".join(str_non_empty_srcs_list)
-    
+
     is_nop = False
-    if (opcode == 0 or opcode == 8) and not is_src0 and not is_src1 and not is_dst:
+    if opcode in [0, 8] and not is_src0 and not is_src1 and not is_dst:
         str_opcode_mnem = "NOP"
         is_nop = True
     elif opcode in g_opcodes:
         str_opcode_mnem = g_opcodes[opcode]
     else:
         str_opcode_mnem = "unk_%03x" % opcode
-    
+
     is_special_mode1 = uop & 0x300000000000 == 0x100000000000
     if (is_uop_alu(uop) or is_uop_ldstad(uop)) and is_special_mode1:
         repl_dsz_mnem = r"DSZ\1N" if opcode & 0xf3f == 0x008 else "DSZN"
         str_opcode_mnem = re.sub("DSZ(8|16|32|64)", repl_dsz_mnem, str_opcode_mnem)
-    
-    str_uop = str_dst + ":= " if is_dst else ""
+
+    str_uop = f"{str_dst}:= " if is_dst else ""
     str_uop += str_opcode_mnem
-    str_uop += "(" + str_srcs + ")" if not is_nop else ""
+    str_uop += f"({str_srcs})" if not is_nop else ""
     return str_uop
 
 def idq_entry_disassemble(addr, idq_uop, idq_imm):
@@ -978,14 +965,14 @@ def idq_entry_disassemble(addr, idq_uop, idq_imm):
     is_src0 = (src_bits & 0xa) != 0
     is_src1 = (src_bits & 0x5) != 0
     is_xmm = (src_bits & 0x3) != 0
-    str_src0 = ""
-    str_src1 = ""
-    if is_src0:
-        str_src0 = get_idq_src_dst_mnem((idq_uop >> 29) & 0x1f, is_xmm)
-    if is_src1:
-        str_src1 = get_idq_src_dst_mnem((idq_uop >> 34) & 0x1f, is_xmm)
+    str_src0 = (
+        get_idq_src_dst_mnem((idq_uop >> 29) & 0x1F, is_xmm) if is_src0 else ""
+    )
+    str_src1 = (
+        get_idq_src_dst_mnem((idq_uop >> 34) & 0x1F, is_xmm) if is_src1 else ""
+    )
     str_dst = get_idq_src_dst_mnem((idq_uop >> 14) & 0x1f, is_xmm)
-    
+
     str_opcode_mnem = ""
     if opcode == 0 and not is_src0 and not is_src1:
         str_opcode_mnem = "NOP"
@@ -993,20 +980,24 @@ def idq_entry_disassemble(addr, idq_uop, idq_imm):
         str_opcode_mnem = g_opcodes[opcode]
     else:
         str_opcode_mnem = "unk_%03x" % opcode
-    
+
     str_imm = ("0x%016x" if idq_imm >= 0x100000000 else "0x%08x") % idq_imm
-    str_srcs = \
-        str_src0 + ", " + str_src1 if is_src0 and is_src1 else \
-        str_imm + ", " + str_src1 if not is_src0 and is_src1 else \
-        str_src0 + ", " + str_imm if is_src0 and not is_src1 else \
-        str_imm
-    
+    str_srcs = (
+        f"{str_src0}, {str_src1}"
+        if is_src0 and is_src1
+        else f"{str_imm}, {str_src1}"
+        if not is_src0 and is_src1
+        else f"{str_src0}, {str_imm}"
+        if is_src0 and not is_src1
+        else str_imm
+    )
+
     str_uop = ""
     if str_opcode_mnem == "NOP":
         str_uop = str_opcode_mnem
     else:
-        str_uop = str_dst + ":= " + str_opcode_mnem + "(" + str_srcs + ")"
-    
+        str_uop = f"{str_dst}:= {str_opcode_mnem}({str_srcs})"
+
     return "%02x: " % addr + "%016x: " % idq_uop + "%03x: " % opcode + str_uop
 
 class idq_entry_t:
@@ -1024,22 +1015,21 @@ def idq_disassembler_print(idq_ents):
 def idq_disassemble():
     ms_debug_defeature_val = crbus_read(0x38c)
     crbus_write(0x38c, 0)
-    
-    idq_ents = []
-    for addr in range(32):
-        idq_ents.append(idq_entry_t( \
-            ldat_array_read(0x10, 1, 0, 0, addr).ToUInt64(), \
-            ldat_array_read(0x10, 2, 0, 0, addr).ToUInt64()))
-    
+
+    idq_ents = [
+        idq_entry_t(
+            ldat_array_read(0x10, 1, 0, 0, addr).ToUInt64(),
+            ldat_array_read(0x10, 2, 0, 0, addr).ToUInt64(),
+        )
+        for addr in range(32)
+    ]
     crbus_write(0x38c, ms_debug_defeature_val)
-    
+
     idq_disassembler_print(idq_ents)
 
 def load_ms_array_str_data(file_name):
-    fi = open(file_name, "r")
-    str_array = fi.read()
-    fi.close()
-    
+    with open(file_name, "r") as fi:
+        str_array = fi.read()
     array_vals = []
     str_lines = str_array.split("\n")
     for str_line in str_lines:
@@ -1050,34 +1040,33 @@ def load_ms_array_str_data(file_name):
         four_vals_seq = four_vals.split()
         if len(four_vals_seq) != 4:
             continue
-        for val in four_vals_seq:
-            array_vals.append(int(val, 16))
+        array_vals.extend(int(val, 16) for val in four_vals_seq)
     return array_vals
 
 def process_seqword(uaddr, uop, seqword, before_uop):
     uop_ctrl = (seqword & 0x3c) >> 2
     uop_ctrl_uidx = seqword & 0x03
-    
+
     tetrad_ctrl_uidx = (seqword & 0xc0) >> 6
     tetrad_ctrl_next_uaddr = (seqword & 0x7fff00) >> 8
-    
+
     sync_ctrl = (seqword & 0xe000000) >> 25
     sync_ctrl_uidx = (seqword & 0x1800000) >> 23
-    
+
     uret_uop_ctrls = (2, 3)
     uend_uop_ctrls = (0xc, 0xd, 0xe, 0xf)
     exec_flow_uop_ctrls = uret_uop_ctrls + uend_uop_ctrls
     save_uip_uop_ctrls = (4, 5, 6, 7)
     save_uip_reg_ovr_uop_ctrls = (6, 7)
     misc_exec_ctrl_uop_ctrls = (8, 9, 0xb)
-    
+
     lfence_sync_ctrls = (1, 2, 3)
     oooe_sync_ctrls = (4, 5, 6, 7)
-    
+
     assert(uop_ctrl != 1 and uop_ctrl_uidx != 0x03)
     assert(sync_ctrl_uidx != 0x03 or sync_ctrl == 0)
     assert(uop_ctrl_uidx == 0 or uop_ctrl != 0)
-    
+
     opcode = get_uop_opcode(uop)
     is_testustate_uop = is_uop_testustate(uop)
     uidx = uaddr & 0x03
@@ -1085,7 +1074,7 @@ def process_seqword(uaddr, uop, seqword, before_uop):
     after_uop = not before_uop
     res = () if after_uop else ""
     exec_flow_stop = False
-    
+
     if uop_ctrl_uidx == uidx and after_uop:
         if uop_ctrl in uret_uop_ctrls:
             assert(tetrad_ctrl_uidx != uidx)
@@ -1100,36 +1089,36 @@ def process_seqword(uaddr, uop, seqword, before_uop):
             str_cond = "? " if is_testustate_uop else ""
             next_uaddr = uaddr + (2 if uaddr & 3 == 2 else 1)
             res = str_cond + "SEQW SAVEUIP%i U%04x" % ((uop_ctrl & 1), next_uaddr),
-    
+
     special_tetrad_ctrl_case = uidx == 2 and tetrad_ctrl_uidx == 3 and is_testustate_uop and \
         (uop_ctrl_uidx != 2 or (uop_ctrl not in exec_flow_uop_ctrls))
     if (tetrad_ctrl_uidx == uidx or special_tetrad_ctrl_case) and after_uop:
         assert(special_tetrad_ctrl_case or uop_ctrl_uidx != uidx or \
                uop_ctrl == 0 or uop_ctrl not in exec_flow_uop_ctrls)
-        
+
         str_cond = "? " if is_testustate_uop else ""
-        res += str_cond + "SEQW GOTO " + get_str_uaddr(tetrad_ctrl_next_uaddr),
+        res += (f"{str_cond}SEQW GOTO {get_str_uaddr(tetrad_ctrl_next_uaddr)}", )
         exec_flow_stop = not is_testustate_uop and opcode != 0x00d and \
             (uop_ctrl_uidx != uidx or uop_ctrl not in save_uip_uop_ctrls)
-    
+
     if uop_ctrl_uidx == uidx and uop_ctrl in save_uip_reg_ovr_uop_ctrls and before_uop:
         res = "ROVR<-"
-    
+
     if sync_ctrl_uidx == uidx and sync_ctrl in lfence_sync_ctrls and before_uop:
         lfence_ctrl_mnems = ("LFNCEWAIT", "LFNCEMARK", "LFNCEWTMRK")
         assert(sync_ctrl - 1 < len(lfence_ctrl_mnems))
-        res += "%s->" % lfence_ctrl_mnems[sync_ctrl - 1]
+        res += f"{lfence_ctrl_mnems[sync_ctrl - 1]}->"
     if sync_ctrl_uidx == uidx and sync_ctrl in oooe_sync_ctrls and before_uop:
         oooe_sync_ctrl_mnems = ("SYNCFULL", "SYNCWAIT", "SYNCMARK", "SYNCWTMRK")
         sync_mnem_idx = sync_ctrl - oooe_sync_ctrls[0]
         assert(sync_mnem_idx < len(oooe_sync_ctrl_mnems))
-        res += "%s->" % oooe_sync_ctrl_mnems[sync_mnem_idx]
+        res += f"{oooe_sync_ctrl_mnems[sync_mnem_idx]}->"
     if uop_ctrl_uidx == uidx and uop_ctrl in misc_exec_ctrl_uop_ctrls and before_uop:
         misc_ctrl_mnems = ("WRTAGW", "MSLOOP", "", "MSSTOP")
         misc_ctrl_mnem_idx = uop_ctrl - misc_exec_ctrl_uop_ctrls[0]
         assert(misc_ctrl_mnem_idx < len(misc_ctrl_mnems))
-        res += "%s->" % misc_ctrl_mnems[misc_ctrl_mnem_idx]
-    
+        res += f"{misc_ctrl_mnems[misc_ctrl_mnem_idx]}->"
+
     return (res, exec_flow_stop) if after_uop else res
 
 def process_match_patch_regs(match_patch_regs):
@@ -1150,20 +1139,16 @@ def process_msram_uops(msram):
     assert(len(msram) == 0x200)
     msram_ucode = []
     for i in range(0x80):
-        msram_ucode.append(msram[i])
-        msram_ucode.append(msram[0x80 + i])
-        msram_ucode.append(msram[0x100 + i])
-        msram_ucode.append(msram[0x180 + i])
+        msram_ucode.extend(
+            (msram[i], msram[0x80 + i], msram[0x100 + i], msram[0x180 + i])
+        )
     return msram_ucode
 
 def idq_test():
-    fi = open("idq_test_uops.txt", "r")
-    str_idq_uops = fi.read()
-    fi.close()
-    fi = open("idq_test_imms.txt", "r")
-    str_idq_imms = fi.read()
-    fi.close()
-    
+    with open("idq_test_uops.txt", "r") as fi:
+        str_idq_uops = fi.read()
+    with open("idq_test_imms.txt", "r") as fi:
+        str_idq_imms = fi.read()
     str_idq_uops = str_idq_uops.split()
     str_idq_imms = str_idq_imms.split()
     idq_disassembler_print( \
@@ -1177,14 +1162,14 @@ def msrom_disasm(arrays_dump_dir):
     msram_seqwords = load_ms_array_str_data(arrays_dump_dir + "\\ms_array2.txt")
     match_patch_regs = load_ms_array_str_data(arrays_dump_dir + "\\ms_array3.txt")
     match_patch_data, patch_match_data = process_match_patch_regs(match_patch_regs)
-    
+
     msram = load_ms_array_str_data(arrays_dump_dir + "\\ms_array4.txt")
     msram_ucode = process_msram_uops(msram)
     if len(ucode) > 0x7c00:
-        ucode = ucode[0: 0x7c00]
-        msrom_seqwords = msrom_seqwords[0: 0x7c00]
+        ucode = ucode[:0x7c00]
+        msrom_seqwords = msrom_seqwords[:0x7c00]
     ucode += msram_ucode
-    
+
     str_exec_flow_delim = "------------------------------------------------------------------------------------"
     str_disasm = ""
     for uaddr, uop in enumerate(ucode):
@@ -1193,21 +1178,21 @@ def msrom_disasm(arrays_dump_dir):
         else:
             msram_addr = uaddr - 0x7c00
             seqword = msram_seqwords[msram_addr // 4]
-        
+
         if uaddr & 3 == 3:
             str_disasm += "\n"
             continue
-        
+
         if uaddr in g_uop_lables:
             if uaddr & 3 != 0:
                 str_disasm += "\n"
             str_disasm += g_uop_lables[uaddr] + ":\n"
-        
+
         str_match_patch_addr = ""
         if uaddr in match_patch_data or uaddr in patch_match_data:
             str_match_patch_addr = "U%04x: " % (match_patch_data[uaddr] if uaddr in match_patch_data else \
                                                 patch_match_data[uaddr])
-        
+
         str_disasm += "U%04x: " % uaddr + str_match_patch_addr + "%012x " % uop
         seqword_prefix = process_seqword(uaddr, uop, seqword, True)
         str_seqw_prefix_format = "%" + ("%d" % (15 - len(str_match_patch_addr)))  + "s "
@@ -1215,7 +1200,7 @@ def msrom_disasm(arrays_dump_dir):
             str_disasm += str_seqw_prefix_format % seqword_prefix
         else:
             str_disasm += str_seqw_prefix_format % ""
-        
+
         str_disasm += uop_disassemble(uop, uaddr) + "\n"
         seqword_sentences, exec_flow_stop = process_seqword(uaddr, uop, seqword, False)
         if len(seqword_sentences):
@@ -1224,15 +1209,14 @@ def msrom_disasm(arrays_dump_dir):
                 str_disasm += str_prefix + seqword_sentence + "\n"
             if exec_flow_stop:
                 str_disasm += str_exec_flow_delim + "\n"
-        
+
         opcode = get_uop_opcode(uop)
         stop_exec_flow_opcodes = (0x148, 0x15d) #URET, UJMP
         if opcode in stop_exec_flow_opcodes:
             str_disasm += str_exec_flow_delim + "\n"
-    
-    fo = open(arrays_dump_dir + "\\ucode_glm.txt", "w")
-    fo.write(str_disasm)
-    fo.close()
+
+    with open(arrays_dump_dir + "\\ucode_glm.txt", "w") as fo:
+        fo.write(str_disasm)
 
 def main():
     if len(sys.argv) < 2:
